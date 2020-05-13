@@ -117,40 +117,32 @@ class Storage(commands.Cog):
             self.inventory_requests.append(ctx.author.id)
 
 
-    @commands.command()
-    async def register(self, ctx):
-        users_sheet = client.open('Registered Users').get_worksheet(0)
-        registered_users = users_sheet.col_values(1)
-
-        registered_users = set(registered_users)
-
-        curr_user = str(ctx.author)
-
-        curr_user_tag = curr_user[-4:]
-        dummy = "1234"
-
-        index = 2
-       
-    # start rental process
+    # start user registration and rental process
     @commands.command()
     async def rent(self, ctx):
+
+        # open registered users spreadsheet
         users_sheet = client.open('Registered Users').get_worksheet(0)
+
+        # get discord tags
         registered_users = users_sheet.col_values(1)
 
+        # convert to set for constant time contains checks operations - O(1)
         registered_users = set(registered_users)
 
+        # get username as a string so it can be logged
         curr_user = str(ctx.author)
 
+        # get user tag 
         curr_user_tag = curr_user[-4:]
-        dummy = "1234"
+
+        # always add at top of sheet so it works like a stack
         index = 2
 
-        # discord username
-        user_name = ctx.author.name
-
         # inform user about incoming DM
-        await ctx.send(f'Hey {user_name}, take a look at your DMs :eyes:')
+        await ctx.send(f'Hey {ctx.author.mention}, take a look at your DMs :eyes:')
 
+        # if user is new
         if(curr_user_tag not in registered_users):
 
             # list to log user information
@@ -160,7 +152,7 @@ class Storage(commands.Cog):
             emoji = '\N{THUMBS UP SIGN}'
 
             # initial message to ask for user information
-            initial_message = (f'Hi {user_name}! It seems like this is your first time requesting to rent out equipment from the UPE Makerspace. In order to rent out equipment, ' 
+            initial_message = (f'Hi {ctx.author.mention}! It seems like this is your first time requesting to rent out equipment from the UPE Makerspace. In order to rent out equipment, ' 
                     + 'I need you to provide me with your *First Name*, *Last Name*, and *PID*. ' 
                     + 'First, please enter your **First Name** and **Last Name** separated by spaces, (e.g. John Doe).')
 
@@ -172,6 +164,7 @@ class Storage(commands.Cog):
             initial_response_trimmed =  initial_response.content.split(" ")
             initial_response_length = len(initial_response_trimmed)
 
+            # perform user response validation
             while(initial_response_length < 2):
                 error_message = ('Uh-oh! I seems that either your First Name or Last Name is missing. '
                                 + 'Please make sure you include your **First Name** and **Last Name** ' 
@@ -187,6 +180,7 @@ class Storage(commands.Cog):
             await initial_response.add_reaction(emoji)
 
             # log correct user's First Name and Last Name
+            initial_response_trimmed = initial_response_trimmed[:2]
             user_info.extend(initial_response_trimmed)
 
             # send PID message to the user
@@ -214,6 +208,7 @@ class Storage(commands.Cog):
             # log correct user's PID
             user_info.append(pid_response.content)
 
+            # insert new row with new user information
             row = [curr_user_tag, user_info[0], user_info[1], user_info[2]]
             users_sheet.insert_row(row, index)
 
@@ -222,14 +217,16 @@ class Storage(commands.Cog):
 
             # display list of available items
             #sendItemsMessage = await ctx.author.send(items_message)
-
+            ###############-PROCEEED TO TAKE ITEM REQUEST-###################
+        # if user has done the above already
         else:
-            inventory_message = f'Hi {user_name}, Welcome Back!.\n```Which inventory would you like to check?\n[1] Equipment\n[2] Snacks\n\nType the corresponding option number or "cancel"```'
+            inventory_message = f'Hi {ctx.author.mention}, Welcome Back!\n```Which inventory would you like to check?\n[1] Equipment\n[2] Snacks\n\nType the corresponding option number or "cancel"```'
             send_inventory_message = await ctx.author.send(inventory_message)
 
         # display list of available items
         #sendItemsMessage = await ctx.author.send(items_message)
         
+# auxiliary function for the message_check function to make a string sequence of the given parameter
 def make_sequence(seq):
     if seq is None:
         return ()
@@ -238,12 +235,14 @@ def make_sequence(seq):
     else:
         return (seq,)
 
+# function to make logical checks when receiving DMs
 def message_check(channel=None, author=None, content=None, ignore_bot=True, lower=True):
     channel = make_sequence(channel)
     author = make_sequence(author)
     content = make_sequence(content)
     if lower:
         content = tuple(c.lower() for c in content)
+    # check that the sender of DM is the same as the receiver of the original DM from bot
     def check(message):
         if ignore_bot and message.author.bot:
             return False
@@ -257,6 +256,7 @@ def message_check(channel=None, author=None, content=None, ignore_bot=True, lowe
         return True
     return check
 
+# function to format spreadsheets to readable formats
 def pretty_format(entries):
     table = PrettyTable() 
     table.field_names = entries[0].keys()
@@ -266,6 +266,6 @@ def pretty_format(entries):
 
     return table
 
-
+# cog setup in bot file
 def setup(bot):
     bot.add_cog(Storage(bot))
