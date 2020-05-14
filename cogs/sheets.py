@@ -8,6 +8,7 @@ import pprint
 
 # https://developers.google.com/sheets/api/guides/concepts
 # https://docs.google.com/spreadsheets/d/1y7MaMeZb-XkrvsGVlCYdAfKKdCRJ50TdyU6Tdry6e-o/edit#gid=0
+# https://docs.google.com/spreadsheets/d/19F9BQMQD-EOhl_oupPd8xXM_3ZZmUaQ0a9pwO-sksjg/edit#gid=0
 # TODO: Create skeleton directing flow of application by an user wanting to rent, add, delete items.
 
 key_file = 'secret_key.json'
@@ -48,8 +49,17 @@ class Storage(commands.Cog):
 
                 if content == '1':
                     sheet1 = client.open('Inventory').get_worksheet(0)
-                    equipment = sheet1.get_all_records()
-                    #print(equipment)
+                    
+                    # read entire spreadsheet as a list of lists
+                    all_values = sheet1.get_all_values()
+                    
+                    # since we only want to display items and their quantities, only get these two to display
+                    # to do this, I changed the all_values from a lists of dictionaries to a list of lists for
+                    # better manipulation of individual entries
+                    equipment = []
+                    for entry in all_values:
+                         equipment.append(entry[1:3])
+        
                     parsed_equipment = pretty_format(equipment)
                     await channel.send(f"{author.mention} here's a list of our equipment:\n```{parsed_equipment}```")
                     #print("Requests before popping off: ", self.inventory_requests)
@@ -71,28 +81,29 @@ class Storage(commands.Cog):
                     emoji = '\N{Black Question Mark Ornament}'
                     await channel.send(f'Invalid inventory selection. {emoji}')                        
                 
-
             request_index += 1
 
-    @commands.Cog.listener()
-    async def on_reaction_add(self, reaction, user):
-        '''
-        TODO: Allow e-board member to react in order to grant permission.
-        '''
-        print("Reaction by: " + str(user) + " & Target user is: " + str(self.target_user))
-        if str(self.target_user) == str(user): 
-            if reaction == 1:
-                sheet1 = client.open('Inventory').get_worksheet(0)
-                equipment = sheet1.get_all_records()
-                print(equipment)
-                await self.ctx.send(equipment)
-            elif reaction == 2:
-                sheet2 = client.open('Inventory').get_worksheet(1)
-                snacks = sheet2.get_all_records()
-                print(snacks)
-                await self.ctx.send(snacks)
-            else:
-                await self.ctx.send('Invalid Inventory')
+    ##### ========== COMMENTED SINCE WAS GIVING ERRORS ===========
+    #@commands.Cog.listener()
+    #async def on_reaction_add(self, reaction, user):
+    #
+    #    '''
+    #    TODO: Allow e-board member to react in order to grant permission.
+    #    '''
+    #    print("Reaction by: " + str(user) + " & Target user is: " + str(self.target_user))
+    #    if str(self.target_user) == str(user): 
+    #           if reaction == 1:
+    #            sheet1 = client.open('Inventory').get_worksheet(0)
+    #           equipment = sheet1.get_all_records()
+    #           print(equipment)
+    #           await self.ctx.send(equipment)
+    #        elif reaction == 2:
+    #            sheet2 = client.open('Inventory').get_worksheet(1)
+    #            snacks = sheet2.get_all_records()
+    #            print(snacks)
+    #            await self.ctx.send(snacks)
+    #        else:
+    #            await self.ctx.send('Invalid Inventory')
             
     #Commands
     @commands.command()
@@ -100,10 +111,18 @@ class Storage(commands.Cog):
         '''
         Calls for an inventory. If no argument is provided, bot will listen for next messages coming from user.
         '''
+        # Display only available equipment - Item and Quantity. No need to display other details to user 
         if arg == 1:
             sheet1 = client.open('Inventory').get_worksheet(0)
-            equipment = sheet1.get_all_records() #TODO: FIX format
-            #print(equipment)
+         
+             # read entire spreadsheet
+            all_values = sheet1.get_all_values()
+                    
+            # since we only want to display items and their quantities, only get these two to display
+            equipment = []
+            for entry in all_values:
+                equipment.append(entry[1:3])
+        
             parsed_equipment = pretty_format(equipment)
             await ctx.send(f"{ctx.author.mention} here's a list of our equipment:\n```{parsed_equipment}```")
         elif arg == 2:
@@ -139,17 +158,20 @@ class Storage(commands.Cog):
         # always add at top of sheet so it works like a stack
         index = 2
 
+        # emoji for reaction
+        emoji = '\N{THUMBS UP SIGN}'
+
+        # emoji for cancelations
+        cancel_emoji = '\N{CROSS MARK}'
+
         # inform user about incoming DM
-        await ctx.send(f'Hey {ctx.author.mention}, take a look at your DMs :eyes:')
+        await ctx.send(f'Hey {ctx.author.mention}, check your DMs :eyes:')
 
         # if user is new
         if(curr_user_tag not in registered_users):
 
             # list to log user information
             user_info = []
-
-            # emoji for reaction
-            emoji = '\N{THUMBS UP SIGN}'
 
             # initial message to ask for user information
             initial_message = (f'Hi {ctx.author.mention}! It seems like this is your first time requesting to rent out equipment from the UPE Makerspace. In order to rent out equipment, ' 
@@ -215,13 +237,269 @@ class Storage(commands.Cog):
             inventory_message = 'Sweet!\n```Which inventory would you like to check?\n[1] Equipment\n[2] Snacks\n\nType the corresponding option number or "cancel"```'
             send_inventory_message = await ctx.author.send(inventory_message)
 
+            # wait for user response
+            inventory_response = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
+            user_selection = inventory_response.content
+            is_number = user_selection .isnumeric()
+
+            while((user_selection < 1 or user_selection > 2)):
+                error_emoji = '\N{Black Question Mark Ornament}'
+                error_message = f'Invalid inventory selection. {error_emoji}' 
+                await ctx.author.send(error_message)
+
+                # wait for new user response
+                inventory_response = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
+                user_selection = inventory_response.content
+                is_number = user_selection .isnumeric()
+
+            # react to correct user response
+            await inventory_response.add_reaction(emoji)
+            user_selection = inventory_response.content
+
+            if(user_selection == '1'):
+                sheet1 = client.open('Inventory').get_worksheet(0)
+                
+                # read entire spreadsheet as a list of lists
+                all_values = sheet1.get_all_values()
+                
+                # since we only want to display items and their quantities, only get these two to display
+                # to do this, I changed the all_values from a lists of dictionaries to a list of lists for
+                # better manipulation of individual entries
+                equipment = []
+                for entry in all_values:
+                        equipment.append(entry[:2])
+    
+                parsed_equipment = pretty_format(equipment)
+                await ctx.author.send(f"{ctx.author.mention} here's a list of our equipment:\n```{parsed_equipment}```")
+                #print("Requests before popping off: ", self.inventory_requests)
+                #self.inventory_requests.pop(request_index)
+
+            elif(user_selection == '2'):
+                sheet2 = client.open('Inventory').get_worksheet(1)
+                snacks = sheet2.get_all_records()
+                #print(snacks)
+                parsed_snacks = pretty_format(snacks)
+                await ctx.author.send(f"{ctx.author.mention} here's a list of our snacks:\n```{parsed_snacks}```")
+                #print("Requests before popping off: ", self.inventory_requests)
+                #self.inventory_requests.pop(request_index)
+            
             # display list of available items
             #sendItemsMessage = await ctx.author.send(items_message)
+
+
             ###############-PROCEEED TO TAKE ITEM REQUEST-###################
+
         # if user has done the above already
         else:
-            inventory_message = f'Hi {ctx.author.mention}, Welcome Back!\n```Which inventory would you like to check?\n[1] Equipment\n[2] Snacks\n\nType the corresponding option number or "cancel"```'
+            inventory_message = (f'Hi {ctx.author.mention}, Welcome Back!\n```Which inventory would you like to check?'+
+                                '\n[1] Equipment\n[2] Snacks\n\nPlease type the corresponding option number or "cancel"```')
+
             send_inventory_message = await ctx.author.send(inventory_message)
+
+             # wait for user response
+            inventory_response = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
+            user_selection = inventory_response.content
+            is_number = user_selection.isnumeric()
+
+            # user input validation for selected inventory
+            while(user_selection.lower() != 'cancel'):
+
+                if(is_number):
+                    if(int(user_selection) >= 1 and int(user_selection) <= 2):
+                        break
+
+                error_emoji = '\N{Black Question Mark Ornament}'
+                error_message = f'Invalid inventory selection. {error_emoji}' 
+                await ctx.author.send(error_message)
+
+                # wait for new user response
+                inventory_response = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
+                user_selection = inventory_response.content
+                is_number = user_selection.isnumeric()
+
+            # react to correct user response
+            user_selection = inventory_response.content
+            if(user_selection != 'cancel'):
+                await inventory_response.add_reaction(emoji)
+
+            if(user_selection == '1'):
+                sheet1 = client.open('Inventory').get_worksheet(0)
+                
+                # read entire spreadsheet as a list of lists
+                all_values = sheet1.get_all_values()
+                
+                # since we only want to display items and their quantities, only get these two to display
+                # to do this, I changed the all_values from a lists of dictionaries to a list of lists for
+                # better manipulation of individual entries
+                equipment = []
+                                
+                for entry in all_values:
+                        equipment.append(entry[:3])
+
+                first_number = equipment[1][0]
+                last_number = equipment[-1][0]
+
+                parsed_equipment = pretty_format(equipment)
+
+                # list to log user selection
+                user_selection_info = []
+                
+                equipment_message = (f"{ctx.author.mention} here's a list of our equipment available for rent:\n```{parsed_equipment}``` \n"
+                                    + "Please type the ID and quantity, separated by spaces, of the item(s) you wish to rent out, (e.g. 1 2) "
+                                    + "for 2 ipads. Please note that you can only rent out up to **three** items at a time.")
+
+                send_equipment_message = await ctx.author.send(equipment_message)
+                
+                #print("Requests before popping off: ", self.inventory_requests)
+                #self.inventory_requests.pop(request_index)
+
+                equipment_selection = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
+                user_selection = equipment_selection.content
+
+                # check for cancellation
+                if(user_selection.lower() == 'cancel'):
+                    await ctx.author.send(f"You have cancelled your request. {cancel_emoji}")
+                    return
+
+                # get user selection (ID and quantity)
+                equipment_selection_trimmed =  user_selection.split(" ")
+                equipment_selection_length = len(equipment_selection_trimmed)
+                
+                # logical flag to check for numeric values
+                is_number = True
+
+                for entry in equipment_selection_trimmed:
+                        if(entry.isnumeric() == False):
+                            is_number = False
+
+                # logical flag for selected rental quantity
+                can_take_this_many = True
+
+                avl_item_quantity = None
+
+                if(is_number and equipment_selection_length == 2 and 
+                    (int(equipment_selection_trimmed[0]) >= int(first_number) 
+                    and int(equipment_selection_trimmed[0]) <= int(last_number))):
+                    # get row values from user selection
+                    selected_item_row = sheet1.row_values(int(equipment_selection_trimmed[0]) + 1)
+
+                    # get selected item
+                    selected_item = selected_item_row[1] 
+
+                    # get item's available quantity
+                    avl_item_quantity = selected_item_row[2]
+
+                    if(int(equipment_selection_trimmed[1]) > 3 or int(equipment_selection_trimmed[1]) > int(avl_item_quantity)):
+                        can_take_this_many = False
+          
+                # validate input - check that user only gave two selections, that user input is numeric, that selected quantity is valid,
+                # and that ID is valid
+                while(equipment_selection_length < 2 or equipment_selection_length > 2 or is_number == False or can_take_this_many == False
+                        or int(equipment_selection_trimmed[0]) < int(first_number) or int(equipment_selection_trimmed[0]) > int(last_number)):
+                        
+                    error_emoji = '\N{Black Question Mark Ornament}'
+                    
+                    error_message = ""
+                    if(equipment_selection_length > 2):
+                        error_message = (f'Invalid inventory selection {error_emoji} Please type only the ID and the quantity of the item you wish to rent out,'
+                                        + "(e.g. 1 2) for 2 ipads.")
+                    elif(equipment_selection_length < 2):
+                        error_message = (f'Invalid inventory selection {error_emoji} Please type both the ID and the quantity of the item your wish to rent out,'
+                                        + "(e.g. 1 2) for 2 ipads.")
+                    elif(is_number == False):
+                        error_message = (f'Invalid inventory selection {error_emoji} Please type a valid ID and quantity of the item your wish to rent out,'
+                                        + "(e.g. 1 2) for 2 ipads.")
+                    elif(int(equipment_selection_trimmed[0]) < int(first_number) or int(equipment_selection_trimmed[0]) > int(last_number)):
+                        error_message = (f'Invalid inventory selection {error_emoji} Pl ease type a valid ID of the item your wish to rent out,'
+                                        + "(e.g. 1 2) for 2 ipads.")
+
+                    elif(is_number and equipment_selection_length == 2 and 
+                        (int(equipment_selection_trimmed[0]) >= int(first_number) 
+                        and int(equipment_selection_trimmed[0]) <= int(last_number))):
+
+                        if(int(equipment_selection_trimmed[1]) > 3):
+                            error_message = (f'Invalid inventory selection {error_emoji} You are only allowed to rent up to **three** items at a time.')
+                
+                        if(int(equipment_selection_trimmed[1]) > int(avl_item_quantity)):
+                            error_message = (f'Invalid inventory selection {error_emoji} You are trying to rent out {equipment_selection_trimmed[1]} {selected_item}s ' 
+                                            + f'but we only have {avl_item_quantity} available.')
+                            can_take_this_many = False
+                            
+                    await ctx.author.send(error_message)
+
+                    # wait for new user response
+                    equipment_selection = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
+                    user_selection = equipment_selection.content
+
+                    if(user_selection.lower() == 'cancel'):
+                        break
+
+                    # get user selection (ID and quantity)
+                    equipment_selection_trimmed = user_selection.split(" ")
+                    equipment_selection_length = len(equipment_selection_trimmed)
+
+                    # logical flag to check for numeric values
+                    is_number = True
+
+                    for entry in equipment_selection_trimmed:
+                        if(entry.isnumeric() == False):
+                            is_number = False
+
+                    # logical flag for selected rental quantity
+                    can_take_this_many = True
+
+                    if(is_number and equipment_selection_length == 2 and 
+                        (int(equipment_selection_trimmed[0]) >= int(first_number) 
+                        and int(equipment_selection_trimmed[0]) <= int(last_number))):
+                        # get row values from user selection
+                        selected_item_row = sheet1.row_values(int(equipment_selection_trimmed[0]) + 1)
+
+                        # get selected item
+                        selected_item = selected_item_row[1] 
+
+                        # get item's available quantity
+                        avl_item_quantity = selected_item_row[2]
+
+                        if(int(equipment_selection_trimmed[1]) > 3 or int(equipment_selection_trimmed[1]) > int(avl_item_quantity)):
+                            can_take_this_many = False
+
+                # check for cancellation
+                if(user_selection.lower() == 'cancel'):
+                    await ctx.author.send(f"You have cancelled your request. {cancel_emoji}")
+                    return
+
+                # react to correct user response
+                await equipment_selection.add_reaction(emoji)
+
+                # log correct user selection
+                user_selection_info.extend(equipment_selection_trimmed)
+
+                 # get row values from user selection
+                selected_item_row = sheet1.row_values(int(equipment_selection_trimmed[0]) + 1)
+
+                selected_item = selected_item_row[1]
+
+                request_message = (f"Sweet! Your rental request for **{user_selection_info[1]}** **{selected_item}s** has been placed! "
+                                   + "I will notify one of our e-board members to review and accept your request. "
+                                   + "I promise they will get this done in no time! "
+                                   + "Once your request is accepted I will notify you so that you can go pick up your "
+                                   + "rental item at the UPE Makerspace. Thank you for letting me help you in this request.")
+                
+                send_request_message = await ctx.author.send(request_message)
+
+            elif(user_selection == '2'):
+                sheet2 = client.open('Inventory').get_worksheet(1)
+                snacks = sheet2.get_all_records()
+                #print(snacks)
+                parsed_snacks = pretty_format(snacks)
+                await ctx.author.send(f"{ctx.author.mention} here's a list of our snacks:\n```{parsed_snacks}```")
+                #print("Requests before popping off: ", self.inventory_requests)
+                #self.inventory_requests.pop(request_index)
+            else:
+                #print("Requests before popping off: ", self.inventory_requests)
+                #self.inventory_requests.pop(request_index)
+                await ctx.author.send(f"You have cancelled your request. {cancel_emoji}")
+                return
 
         # display list of available items
         #sendItemsMessage = await ctx.author.send(items_message)
@@ -259,10 +537,10 @@ def message_check(channel=None, author=None, content=None, ignore_bot=True, lowe
 # function to format spreadsheets to readable formats
 def pretty_format(entries):
     table = PrettyTable() 
-    table.field_names = entries[0].keys()
+    table.field_names = entries[0]
 
-    for entry in entries:
-        table.add_row(entry.values())
+    for entry in entries[1:]:
+        table.add_row(entry)
 
     return table
 
