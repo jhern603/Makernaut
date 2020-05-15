@@ -51,15 +51,8 @@ class Storage(commands.Cog):
                     sheet1 = client.open('Inventory').get_worksheet(0)
                     
                     # read entire spreadsheet as a list of lists
-                    all_values = sheet1.get_all_values()
-                    
-                    # since we only want to display items and their quantities, only get these two to display
-                    # to do this, I changed the all_values from a lists of dictionaries to a list of lists for
-                    # better manipulation of individual entries
-                    equipment = []
-                    for entry in all_values:
-                         equipment.append(entry[1:3])
-        
+                    equipment = sheet1.get_all_records()
+                   
                     parsed_equipment = pretty_format(equipment)
                     await channel.send(f"{author.mention} here's a list of our equipment:\n```{parsed_equipment}```")
                     #print("Requests before popping off: ", self.inventory_requests)
@@ -111,18 +104,13 @@ class Storage(commands.Cog):
         '''
         Calls for an inventory. If no argument is provided, bot will listen for next messages coming from user.
         '''
-        # Display only available equipment - Item and Quantity. No need to display other details to user 
+        # Display only available equipment - Item and Quantity.  
         if arg == 1:
             sheet1 = client.open('Inventory').get_worksheet(0)
          
-             # read entire spreadsheet
-            all_values = sheet1.get_all_values()
+            # read entire spreadsheet
+            equipment = sheet1.get_all_records()
                     
-            # since we only want to display items and their quantities, only get these two to display
-            equipment = []
-            for entry in all_values:
-                equipment.append(entry[1:3])
-        
             parsed_equipment = pretty_format(equipment)
             await ctx.send(f"{ctx.author.mention} here's a list of our equipment:\n```{parsed_equipment}```")
         elif arg == 2:
@@ -139,10 +127,10 @@ class Storage(commands.Cog):
 # function to format spreadsheets to a readable format
 def pretty_format(entries):
     table = PrettyTable() 
-    table.field_names = entries[0]
+    table.field_names = entries[0].keys()
 
-    for entry in entries[1:]:
-        table.add_row(entry)
+    for entry in entries:
+        table.add_row(entry.values())
 
     return table
 

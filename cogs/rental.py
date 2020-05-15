@@ -271,8 +271,13 @@ class Rental(commands.Cog):
                 await ctx.author.send(f"You have cancelled your request. {cancel_emoji}")
                 return
 
-        # inform user about incoming DM
+        ##############################################################################
+        #                                                                            #
+        #           ========= END OF START_RENTAL_PROCESS() =========                #
+        #                                                                            #
+        ##############################################################################
 
+        # inform user about incoming DM
         # check if rent command was invoked from bot channel
         current_channel = str(ctx.message.channel)
         if(current_channel == 'bot-spam'):
