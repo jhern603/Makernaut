@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 # Keys
 secret_key.json
 
 # Environments
 .env
+=======
+.env
+secret_key.json
+>>>>>>> user_registration_and_equipment_rental
