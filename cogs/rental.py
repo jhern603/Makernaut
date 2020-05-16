@@ -1,10 +1,14 @@
-import discord
 from discord.ext import commands
-import gspread
+from discord.ext.commands import MemberConverter
 from oauth2client.service_account import ServiceAccountCredentials
 from prettytable import PrettyTable
 from collections.abc import Sequence
+from time import localtime, strftime
+from collections import deque
+
 import pprint
+import gspread
+import discord
 
 # https://developers.google.com/sheets/api/guides/concepts
 # https://docs.google.com/spreadsheets/d/1y7MaMeZb-XkrvsGVlCYdAfKKdCRJ50TdyU6Tdry6e-o/edit#gid=0
@@ -25,8 +29,9 @@ class Rental(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.inventory_requests = [] #users (IDs) trying to access inventory
-
+        self.equipment_requests_queue = deque()
+        self.converter = MemberConverter()
+        self.my_user_id = "267374448720609281"
 
     # start user registration and rental process
     @commands.command()
@@ -93,10 +98,10 @@ class Rental(commands.Cog):
                 await inventory_response.add_reaction(emoji)
 
             if(user_selection == '1'):
-                sheet1 = client.open('Inventory').get_worksheet(0)
+                equipment_sheet = client.open('Inventory').get_worksheet(0)
                 
                 # read entire spreadsheet as a list of lists
-                all_values = sheet1.get_all_values()
+                inventory_items = equipment_sheet.get_all_values()
                 
                 '''
                 since we only want to display items and their quantities, only get these two to display
@@ -105,7 +110,7 @@ class Rental(commands.Cog):
                 '''
                 equipment = []
                                 
-                for entry in all_values:
+                for entry in inventory_items:
                         equipment.append(entry[:3])
 
                 first_number = equipment[1][0]
@@ -116,19 +121,17 @@ class Rental(commands.Cog):
                 # list to log user selection
                 user_selection_info = []
                 
-                equipment_message = (f"{ctx.author.mention} here's a list of our equipment available for rent:\n```{parsed_equipment}``` \n"
+                equipment_message = (f"{ctx.author.mention}\nHere's a list of our equipment available for rent:\n\n```{parsed_equipment}``` \n"
                                     + "Please type the ID and quantity, separated by spaces, of the item(s) you wish to rent out, (e.g. 1 2) "
                                     + "for 2 ipads. Please note that you can only rent out up to **three** items at a time.")
 
                 send_equipment_message = await ctx.author.send(equipment_message)
-                
-                #print("Requests before popping off: ", self.inventory_requests)
-                #self.inventory_requests.pop(request_index)
-
+     
+                # We first we get the initial message from then user and extract its contents to then do validation on it
                 equipment_selection = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
                 user_selection = equipment_selection.content
 
-                # check for cancellation
+                # check for user cancellation
                 if(user_selection.lower() == 'cancel'):
                     await ctx.author.send(f"You have cancelled your request. {cancel_emoji}")
                     return
@@ -146,14 +149,15 @@ class Rental(commands.Cog):
 
                 # logical flag for selected rental quantity
                 can_take_this_many = True
-
+                
+                # We are initializing 
                 avl_item_quantity = None
 
                 if(is_number and equipment_selection_length == 2 and 
                     (int(equipment_selection_trimmed[0]) >= int(first_number) 
                     and int(equipment_selection_trimmed[0]) <= int(last_number))):
                     # get row values from user selection
-                    selected_item_row = sheet1.row_values(int(equipment_selection_trimmed[0]) + 1)
+                    selected_item_row = equipment_sheet.row_values(int(equipment_selection_trimmed[0]) + 1)
 
                     # get selected item
                     selected_item = selected_item_row[1] 
@@ -226,7 +230,7 @@ class Rental(commands.Cog):
                         (int(equipment_selection_trimmed[0]) >= int(first_number) 
                         and int(equipment_selection_trimmed[0]) <= int(last_number))):
                         # get row values from user selection
-                        selected_item_row = sheet1.row_values(int(equipment_selection_trimmed[0]) + 1)
+                        selected_item_row = equipment_sheet.row_values(int(equipment_selection_trimmed[0]) + 1)
 
                         # get selected item
                         selected_item = selected_item_row[1] 
@@ -249,7 +253,7 @@ class Rental(commands.Cog):
                 user_selection_info.extend(equipment_selection_trimmed)
 
                 # get row values from user selection
-                selected_item_row = sheet1.row_values(int(equipment_selection_trimmed[0]) + 1)
+                selected_item_row = equipment_sheet.row_values(int(equipment_selection_trimmed[0]) + 1)
 
                 selected_item = selected_item_row[1]
 
@@ -257,14 +261,79 @@ class Rental(commands.Cog):
                 if(int(user_selection_info[1]) == 1):
                     sin_or_plur = ''
 
-                request_message = (f"Sweet! Your rental request for **{user_selection_info[1]}** **{selected_item}{sin_or_plur}** has been placed! "
+                # get rental summary information
+                rental_info = []
+                
+                rental_info.append(selected_item)
+                rental_info.append(user_selection_info[1])
+
+                curr_time = strftime("%Y-%m-%d %I:%M %p", localtime())
+
+                rental_info.append(curr_time)
+
+                all_records = users_sheet.get_all_records()
+
+                for entries in all_records:
+                    if(int(entries.get('Discord Tag #')) == int(curr_user_tag)):
+                        rental_info.append(entries.get('First Name'))
+                        rental_info.append(entries.get('Last Name'))
+                        rental_info.append(entries.get('PID'))
+                        break
+
+                # log request into request queue
+                self.equipment_requests_queue.append(rental_info)
+
+                # inform the user that request has been placed and awaits confirmation
+                rental_request_message = (f"Sweet! Your rental request for **{user_selection_info[1]}** **{selected_item}{sin_or_plur}** has been placed! "
                                 + "I will notify one of our e-board members to review and accept your request. "
                                 + "I promise they will get this done in no time! "
                                 + "Once your request is accepted I will notify you so that you can go pick up your "
                                 + "rental item at the UPE Makerspace. Thank you for letting me help you in this quest.")
                 
-                send_request_message = await ctx.author.send(request_message)
-            
+                send_request_message = await ctx.author.send(rental_request_message)
+
+                 # notify Makerspace Manager and Logisitics VP about the requested rental]
+                owner = await self.converter.convert(ctx, self.my_user_id)
+                
+                head_request = self.equipment_requests_queue.popleft()
+
+                rental_message = (f'Hey {owner.mention}! I got a new rental request that needs your attention. Please see the details below:\n\n'
+                                 + f'Item Requested: **{head_request[0]}**\nQuantity Requested: **{head_request[1]}**\n'
+                                 + f'Requested on: **{head_request[2]}**\nRequested by: **{head_request[3]} {head_request[4]}**\n'
+                                 + f'Requester PID: **{head_request[5]}**\n\nPlease accept this request by reacting to this message with a {emoji}')
+
+                await owner.send(rental_message)
+
+                def check_emoji(reaction, user):
+                    return user == owner and str(reaction.emoji) == emoji
+                    
+                owner_reaction, owner = await self.bot.wait_for('reaction_add', check=check_emoji)
+
+                print(owner_reaction)
+                
+                rental_conf_message = (f'Hey {ctx.author.mention}!\n\nYour rental request for **{user_selection_info[1]}** **{selected_item}{sin_or_plur}** '
+                                       + 'is confirmed!')
+                
+                await ctx.author.send(rental_conf_message)
+
+                # once request has been confirmed log corresponding information onto requests section of spreadsheet
+                rentals_sheet = client.open('Equipment Rental').get_worksheet(0)
+
+                # always at the top of spreadsheet so it works as a stack
+                rent_index = 3
+
+                # Make sure that request was accepted
+                if(owner_reaction.emoji == emoji):
+
+                    # insert new row with new rental
+                    rentals_sheet.insert_row(rental_info, rent_index)
+
+                    # only want to update corresponding cell
+                    cell_to_update = equipment_sheet.find(selected_item)
+                
+                    # We need to udpate the corresponding values for the borrowed item on the spreadsheet
+                    equipment_sheet.update_cell(cell_to_update.row, int(cell_to_update.col) + 1, int(avl_item_quantity) - int(user_selection_info[1]))
+
             else:
                 #print("Requests before popping off: ", self.inventory_requests)
                 #self.inventory_requests.pop(request_index)
@@ -292,7 +361,7 @@ class Rental(commands.Cog):
             user_info = []
 
             # initial message to ask for user information
-            initial_message = (f'Hi {ctx.author.mention}! It seems like this is your first time requesting to rent out equipment from the UPE Makerspace. In order to rent out equipment, ' 
+            initial_message = (f'Hey {ctx.author.mention}!\n\nIt seems like this is your first time requesting to rent out equipment from the UPE Makerspace. In order to rent out equipment, ' 
                     + 'I need you to provide me with your *First Name*, *Last Name*, and *PID*. ' 
                     + 'First, please type your **First Name** and **Last Name** separated by spaces, (e.g. John Doe).')
 
@@ -380,6 +449,7 @@ class Rental(commands.Cog):
 
                 #print("Requests before popping off: ", self.inventory_requests)
                 #self.inventory_requests.pop(request_index)
+
 
 # auxiliary function for the message_check function to make a string sequence of the given parameter
 def make_sequence(seq):
