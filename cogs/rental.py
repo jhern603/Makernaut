@@ -87,7 +87,7 @@ class Rental(commands.Cog):
         R_LN_INDEX = 4
         R_PID_INDEX = 5
 
-        # contants for spreadsheet worksheets
+        # constants for spreadsheet worksheets
         EQUIP_WORKSHEET = 0
         USERS_WORKSHEET = 2
         RENTAL_WORKSHEET = 3
