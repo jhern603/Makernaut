@@ -3,12 +3,6 @@ from discord.ext import commands
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from prettytable import PrettyTable
-<<<<<<< HEAD
-
-# https://developers.google.com/sheets/api/guides/concepts
-# https://docs.google.com/spreadsheets/d/1y7MaMeZb-XkrvsGVlCYdAfKKdCRJ50TdyU6Tdry6e-o/edit#gid=0
-#TODO: Create skeleton directing flow of application by an user wanting to rent, add, delete items.
-=======
 from collections.abc import Sequence
 import pprint
 
@@ -16,7 +10,6 @@ import pprint
 # https://docs.google.com/spreadsheets/d/1y7MaMeZb-XkrvsGVlCYdAfKKdCRJ50TdyU6Tdry6e-o/edit#gid=0
 # https://docs.google.com/spreadsheets/d/19F9BQMQD-EOhl_oupPd8xXM_3ZZmUaQ0a9pwO-sksjg/edit#gid=0
 # TODO: Create skeleton directing flow of application by an user wanting to rent, add, delete items.
->>>>>>> user_registration_and_equipment_rental
 
 key_file = 'secret_key.json'
 scope =  ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -27,12 +20,13 @@ client = gspread.authorize(creds)
 class Storage(commands.Cog):
 
     '''
-    Control commands to access the inventory on Gspread DB (Google Sheets)
+    Control commands to access and manage the inventory on Gspread DB (Google Sheets).
     '''
 
     def __init__(self, bot):
         self.bot = bot
         self.inventory_requests = [] #users (IDs) trying to access inventory
+        self.manage_requests = [] #user(ID) trying to manage inventory (Will only allow one admin at a time)
 
     #Events
     @commands.Cog.listener()
@@ -49,6 +43,12 @@ class Storage(commands.Cog):
         if author.id != self.bot.user.id:
             pass
 
+        ##############################################################################
+        #                                                                            #
+        #           ========= Follow up to !inventory =========                      #
+        #                                                                            #
+        ##############################################################################
+
         request_index = 0        
         for user_with_request in self.inventory_requests: #traversing through list of authors that have made inv. requests
  
@@ -56,15 +56,10 @@ class Storage(commands.Cog):
 
                 if content == '1':
                     sheet1 = client.open('Inventory').get_worksheet(0)
-<<<<<<< HEAD
-                    equipment = sheet1.get_all_records()
-                    #print(equipment)
-=======
                     
-                    # read entire spreadsheet as a list of lists
+                    # reads entire spreadsheet as a list of lists
                     equipment = sheet1.get_all_records()
                    
->>>>>>> user_registration_and_equipment_rental
                     parsed_equipment = pretty_format(equipment)
                     await channel.send(f"{author.mention} here's a list of our equipment:\n```{parsed_equipment}```")
                     #print("Requests before popping off: ", self.inventory_requests)
@@ -86,54 +81,7 @@ class Storage(commands.Cog):
                     emoji = '\N{Black Question Mark Ornament}'
                     await channel.send(f'Invalid inventory selection. {emoji}')                        
                 
-<<<<<<< HEAD
-
             request_index += 1
-
-    @commands.Cog.listener()
-    async def on_reaction_add(self, reaction, user):
-        '''
-        TODO: Allow e-board member to react in order to grant permission.
-        '''
-        print("Reaction by: " + str(user) + " & Target user is: " + str(self.target_user))
-        if str(self.target_user) == str(user): 
-            if reaction == 1:
-                sheet1 = client.open('Inventory').get_worksheet(0)
-                equipment = sheet1.get_all_records()
-                print(equipment)
-                await self.ctx.send(equipment)
-            elif reaction == 2:
-                sheet2 = client.open('Inventory').get_worksheet(1)
-                snacks = sheet2.get_all_records()
-                print(snacks)
-                await self.ctx.send(snacks)
-            else:
-                await self.ctx.send('Invalid Inventory')
-=======
-            request_index += 1
-
-    ##### ========== COMMENTED SINCE WAS GIVING ERRORS ===========
-    #@commands.Cog.listener()
-    #async def on_reaction_add(self, reaction, user):
-    #
-    #    '''
-    #    TODO: Allow e-board member to react in order to grant permission.
-    #    '''
-    #    print("Reaction by: " + str(user) + " & Target user is: " + str(self.target_user))
-    #    if str(self.target_user) == str(user): 
-    #           if reaction == 1:
-    #            sheet1 = client.open('Inventory').get_worksheet(0)
-    #           equipment = sheet1.get_all_records()
-    #           print(equipment)
-    #           await self.ctx.send(equipment)
-    #        elif reaction == 2:
-    #            sheet2 = client.open('Inventory').get_worksheet(1)
-    #            snacks = sheet2.get_all_records()
-    #            print(snacks)
-    #            await self.ctx.send(snacks)
-    #        else:
-    #            await self.ctx.send('Invalid Inventory')
->>>>>>> user_registration_and_equipment_rental
             
     #Commands
     @commands.command()
@@ -141,13 +89,6 @@ class Storage(commands.Cog):
         '''
         Calls for an inventory. If no argument is provided, bot will listen for next messages coming from user.
         '''
-<<<<<<< HEAD
-
-        if arg == 1:
-            sheet1 = client.open('Inventory').get_worksheet(0)
-            equipment = sheet1.get_all_records() #TODO: FIX format
-            #print(equipment)
-=======
         # Display only available equipment - Item and Quantity.  
         if arg == 1:
             sheet1 = client.open('Inventory').get_worksheet(0)
@@ -155,7 +96,6 @@ class Storage(commands.Cog):
             # read entire spreadsheet
             equipment = sheet1.get_all_records()
                     
->>>>>>> user_registration_and_equipment_rental
             parsed_equipment = pretty_format(equipment)
             await ctx.send(f"{ctx.author.mention} here's a list of our equipment:\n```{parsed_equipment}```")
         elif arg == 2:
@@ -167,12 +107,17 @@ class Storage(commands.Cog):
         else:
             await ctx.send(f'Hey {ctx.author.mention}\n```Which inventory would you like to check?\n[1] Equipment\n[2] Snacks\n\nType the corresponding option number or "cancel"```')
             self.inventory_requests.append(ctx.author.id)
+    
+    @commands.command()
+    async def search(self, ctx, arg=0):
+        '''
+        Allows queries to the db.
+        '''
+        # Display only available equipment - Item and Quantity.  
 
-<<<<<<< HEAD
-=======
+
 
 # function to format spreadsheets to a readable format
->>>>>>> user_registration_and_equipment_rental
 def pretty_format(entries):
     table = PrettyTable() 
     table.field_names = entries[0].keys()
@@ -182,12 +127,6 @@ def pretty_format(entries):
 
     return table
 
-<<<<<<< HEAD
-
-def setup(bot):
-    bot.add_cog(Storage(bot))
-=======
 # cog setup in bot file
 def setup(bot):
     bot.add_cog(Storage(bot))
->>>>>>> user_registration_and_equipment_rental

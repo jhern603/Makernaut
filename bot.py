@@ -6,11 +6,7 @@ from discord.ext import commands
 load_dotenv()
 secret_key = os.getenv("BOT_KEY")
 
-<<<<<<< HEAD
-command_prefix = '!!'
-=======
 command_prefix = '!'
->>>>>>> user_registration_and_equipment_rental
 bot = commands.Bot(command_prefix)
 
 @bot.event
