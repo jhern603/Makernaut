@@ -10,7 +10,7 @@ Discord bot to handle inventory and logistics for the <a href=https://upe.cs.fiu
 * [Discord Developer Portal: Registered Application](https://discord.com/developers/applications) - Get Bot Account registered and note down client key on a .env file as: `BOT_KEY = <key here>`
 * [Google Cloud - Sheets API](https://console.cloud.google.com/apis/) - Register Project and enable the Google Sheets API. Download the credentials to your director-- the `secret_key.json`.
 
-** For the UPE Makerspace bot, the keys (intended for development) can be provided by any of the executive members behind the project. **
+<b> For the UPE Makerspace bot, the keys (intended for development) can be provided by any of the executive members behind the project. </b>
 
 ### Installing
 
