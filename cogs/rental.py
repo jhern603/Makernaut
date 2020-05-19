@@ -33,6 +33,7 @@ class Rental(commands.Cog):
         #instance variables
         self.bot = bot
         self.equipment_requests_queue = deque()
+        self.active_requests_queue = deque()
         self.converter = MemberConverter()
         self.my_user_id = "267374448720609281"
 
@@ -319,6 +320,19 @@ class Rental(commands.Cog):
                 # react to correct user response
                 await self.equipment_selection.add_reaction(accept_emoji)
 
+                all_users = users_sheet.get_all_records()
+
+                for entries in all_users:
+                    if(int(entries.get('Discord Tag #')) == int(curr_user_tag)):
+                        user_pid = str(entries.get('PID'))
+                        break
+                
+                rentals_sheet = client.open('Inventory').get_worksheet(RENTAL_WORKSHEET)
+
+                cell_list = rentals_sheet.findall(user_pid)
+
+                print(cell_list)
+
                 # log correct user selection
                 user_selection_info.extend(self.equipment_selection_trimed)
 
@@ -365,15 +379,18 @@ class Rental(commands.Cog):
                 # notify Makerspace Manager and Logisitics VP about the requested rental
                 owner = await self.converter.convert(ctx, self.my_user_id)
                 
-                # we need to pop queue right after insertion for
+                # we need to pop queue right after insertion
                 head_request = self.equipment_requests_queue.popleft()
 
-                rental_message = (f'Hey {owner.mention}! I got a new rental request that needs your attention. Please see the details below:\n\n'
+                rental_message = (f'Hey! I got a new rental request that needs your attention. Please see the details below:\n\n'
                                  + f'Item Requested: **{head_request[R_ITEM_INDEX]}**\nQuantity Requested: **{head_request[R_QUANT_INDEX]}**\n'
                                  + f'Requested on: **{head_request[R_DATE_INDEX]}**\nRequested by: **{head_request[R_FN_INDEX]} {head_request[R_LN_INDEX]}**\n'
                                  + f'Requester PID: **{head_request[R_PID_INDEX]}**\n\nPlease accept this request by reacting to this message with a {accept_emoji}')
 
-                await owner.send(rental_message)
+
+                logistics_channel = self.bot.get_channel(711296973512114226)
+                
+                await logistics_channel.send(rental_message)
 
                 def check_emoji(reaction, user):
                     return user == owner and str(reaction.emoji) == accept_emoji
@@ -406,6 +423,9 @@ class Rental(commands.Cog):
                     # insert new row with new rental
                     # always at the top of spreadsheet so it works as a stack
                     rentals_sheet.insert_row(rental_info, RENT_INDEX)
+
+                    # log active request
+                    self.active_requests_queue.append(head_request)
 
                     # only want to update corresponding cell
                     cell_to_update = equipment_sheet.find(selected_item)
@@ -478,7 +498,6 @@ class Rental(commands.Cog):
                 # send PID message to the user
                 pid_message = "Thanks!\n\nNow, please type your **7-digit PID**, (e.g, 1231231)."
                 await ctx.author.send(pid_message)
-
 
                 async def extract_user_pid():
                     # wait for user response
