@@ -1,11 +1,12 @@
 from discord.ext import commands
-from discord.ext.commands import MemberConverter
+from discord.ext.commands import MemberConverter, UserConverter
 from oauth2client.service_account import ServiceAccountCredentials
 from prettytable import PrettyTable
 from collections.abc import Sequence
 from time import localtime, strftime
 from collections import deque
 
+import asyncio
 import pprint
 import gspread
 import discord
@@ -35,6 +36,21 @@ class Rental(commands.Cog):
         self.equipment_requests_queue = deque()
         self.active_requests_queue = deque()
         self.converter = MemberConverter()
+        self.user_converter = UserConverter()
+
+        self.registered_users = dict()
+
+        # open registered users spreadsheet
+        USERS_WORKSHEET = 2
+        self.users_sheet = client.open('Inventory').get_worksheet(USERS_WORKSHEET)
+        self.all_reg_users = self.users_sheet.get_all_values()
+
+        row = 2
+        for entry in self.all_reg_users[1:]:
+            user_id = self.users_sheet.cell(row, 1, value_render_option='FORMULA').value
+            self.registered_users[user_id] = entry[1:]
+            row += 1
+
         self.my_user_id = "267374448720609281"
 
         self.initial_response = None
@@ -78,6 +94,7 @@ class Rental(commands.Cog):
         RENT_INDEX = 3
         PID_MAX_LEN = 7
         TAG_CUTOFF = -4
+        LOGISTICS_CHNL_ID = 711296973512114226
         
         # contants for rent queue
         R_ITEM_INDEX = 0
@@ -89,7 +106,6 @@ class Rental(commands.Cog):
 
         # contants for spreadsheet worksheets
         EQUIP_WORKSHEET = 0
-        USERS_WORKSHEET = 2
         RENTAL_WORKSHEET = 3
         FIRST_COL_INDEX = 1
         HEADER_INDEX = 0
@@ -97,21 +113,9 @@ class Rental(commands.Cog):
         LN_INDEX = 1
         PID_INDEX = 2
 
-        # open registered users spreadsheet
-        users_sheet = client.open('Inventory').get_worksheet(USERS_WORKSHEET)
-
-        # get discord tags
-        registered_users = users_sheet.col_values(FIRST_COL_INDEX)
-
-        # convert to set for constant time contains checks operations - O(1)
-        registered_users = set(registered_users)
-
-        # get username as a string so it can be logged
-        curr_user = str(ctx.author)
-
-        # get user tag 
-        curr_user_tag = curr_user[TAG_CUTOFF:]
-
+        # get user ID to use as key for DB
+        curr_user_id = float(ctx.author.id)
+    
         # emoji for accept reaction
         accept_emoji = '\N{THUMBS UP SIGN}'
 
@@ -320,18 +324,14 @@ class Rental(commands.Cog):
                 # react to correct user response
                 await self.equipment_selection.add_reaction(accept_emoji)
 
-                all_users = users_sheet.get_all_records()
-
-                for entries in all_users:
-                    if(int(entries.get('Discord Tag #')) == int(curr_user_tag)):
-                        user_pid = str(entries.get('PID'))
-                        break
+                # for entries in all_users:
+                #    if(int(entries.get('User ID')) == int(curr_user_id)):
+                #        user_pid = str(entries.get('PID'))
+                #        break
                 
-                rentals_sheet = client.open('Inventory').get_worksheet(RENTAL_WORKSHEET)
+                # rentals_sheet = client.open('Inventory').get_worksheet(RENTAL_WORKSHEET)
 
-                cell_list = rentals_sheet.findall(user_pid)
-
-                print(cell_list)
+                # cell_list = rentals_sheet.findall(user_pid)
 
                 # log correct user selection
                 user_selection_info.extend(self.equipment_selection_trimed)
@@ -355,13 +355,11 @@ class Rental(commands.Cog):
                 curr_time = strftime("%Y-%m-%d %I:%M %p", localtime())
                 rental_info.append(curr_time)
 
-                all_users = users_sheet.get_all_records()
-
-                for entries in all_users:
-                    if(int(entries.get('Discord Tag #')) == int(curr_user_tag)):
-                        rental_info.append(entries.get('First Name'))
-                        rental_info.append(entries.get('Last Name'))
-                        rental_info.append(entries.get('PID'))
+                for key in self.registered_users:
+                    if(key == curr_user_id):
+                        rental_info.append(self.registered_users.get(key)[FN_INDEX])
+                        rental_info.append(self.registered_users.get(key)[LN_INDEX])
+                        rental_info.append(self.registered_users.get(key)[PID_INDEX])
                         break
 
                 # log request into request queue
@@ -376,9 +374,9 @@ class Rental(commands.Cog):
                 
                 await ctx.author.send(rental_request_message)
 
-                # notify Makerspace Manager and Logisitics VP about the requested rental
-                owner = await self.converter.convert(ctx, self.my_user_id)
-                
+                # we need to make sure an authorizer accepts user requests
+                authorizer = None
+
                 # we need to pop queue right after insertion
                 head_request = self.equipment_requests_queue.popleft()
 
@@ -388,26 +386,38 @@ class Rental(commands.Cog):
                                  + f'Requester PID: **{head_request[R_PID_INDEX]}**\n\nPlease accept this request by reacting to this message with a {accept_emoji}')
 
 
-                logistics_channel = self.bot.get_channel(711296973512114226)
+                logistics_channel = self.bot.get_channel(LOGISTICS_CHNL_ID)
                 
-                await logistics_channel.send(rental_message)
+                send_rental_msg = await logistics_channel.send(rental_message)
 
                 def check_emoji(reaction, user):
-                    return user == owner and str(reaction.emoji) == accept_emoji
+                    is_authorizer = False
+                    for role in user.roles:
+                        if role.name == 'Logistics':
+                            is_authorizer = True
+
+                    return is_authorizer and str(reaction.emoji) == accept_emoji
                     
-                owner_reaction, owner = await self.bot.wait_for('reaction_add', check=check_emoji)
+                authorizer_reaction, authorizer = await self.bot.wait_for('reaction_add', check=check_emoji)
 
-                owner = str(owner)
+                # users that have reacted request message
+                users = await authorizer_reaction.users(1).flatten()
 
-                owner_tag = owner[TAG_CUTOFF:]
+                authorizer_id = None
+                for user in users:
+                    authorizer_id = user.id
+
+                authorizer = await self.user_converter.convert(ctx, str(authorizer_id))
 
                 # get name of rent authorizer
-                for entries in all_users:
-                    if(int(entries.get('Discord Tag #')) == int(owner_tag )):
-                        first_name = entries.get('First Name')
-                        last_name = entries.get('Last Name')
+                for key in self.registered_users:
+                    if(key == float(authorizer.id)):
+                        first_name = self.registered_users.get(key)[FN_INDEX]
+                        last_name = self.registered_users.get(key)[LN_INDEX]
                         rental_info.append(f'{first_name} {last_name}')
                         break
+
+                await send_rental_msg.delete()
 
                 rental_conf_message = (f'Hey {ctx.author.mention}!\n\nYour rental request for **{selected_quantity}** **{selected_item}{sin_or_plur}** '
                                        + 'is confirmed!')
@@ -417,8 +427,8 @@ class Rental(commands.Cog):
                 # once request has been confirmed log corresponding information onto requests section of spreadsheet
                 rentals_sheet = client.open('Inventory').get_worksheet(RENTAL_WORKSHEET)
 
-                # Make sure that request was accepted
-                if(owner_reaction.emoji == accept_emoji):
+                # Make sure that request was accepted by e-board member
+                if(authorizer_reaction.emoji == accept_emoji):
 
                     # insert new row with new rental
                     # always at the top of spreadsheet so it works as a stack
@@ -452,7 +462,7 @@ class Rental(commands.Cog):
             await ctx.send(f'Hey {ctx.author.mention}, check your DMs :eyes:')
 
         # if user is new
-        if(curr_user_tag not in registered_users):
+        if(curr_user_id not in self.registered_users):
 
             # list to log user information
             user_info = []
@@ -556,9 +566,10 @@ class Rental(commands.Cog):
                 user_confirmation = await extract_user_info(message)
 
 
-             # insert new row with new user information
-            row = [curr_user_tag, user_info[FN_INDEX], user_info[LN_INDEX], user_info[PID_INDEX]]
-            users_sheet.insert_row(row, ROW_INDEX)
+             # insert new row with new user information and log info into dictionary
+            self.registered_users[curr_user_id] = user_info
+            row = [curr_user_id, user_info[FN_INDEX], user_info[LN_INDEX], user_info[PID_INDEX]]
+            self.users_sheet.insert_row(row, ROW_INDEX)
 
             inventory_message = 'Sweet!\n\nWhich inventory would you like to check?\n\n```[1] General Equipment```\n\nPlease type the corresponding option number or "cancel"'
 
