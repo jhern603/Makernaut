@@ -5,11 +5,13 @@ from prettytable import PrettyTable
 from collections.abc import Sequence
 from time import localtime, strftime
 from collections import deque
+from datetime import timedelta, date
 
 import asyncio
 import pprint
 import gspread
 import discord
+import datetime
 
 # https://developers.google.com/sheets/api/guides/concepts
 # https://docs.google.com/spreadsheets/d/1y7MaMeZb-XkrvsGVlCYdAfKKdCRJ50TdyU6Tdry6e-o/edit#gid=0
@@ -93,8 +95,8 @@ class Rental(commands.Cog):
         ROW_INDEX = 2
         RENT_INDEX = 3
         PID_MAX_LEN = 7
-        TAG_CUTOFF = -4
         LOGISTICS_CHNL_ID = 711296973512114226
+        MAX_DAYS = 2
         
         # contants for rent queue
         R_ITEM_INDEX = 0
@@ -352,7 +354,7 @@ class Rental(commands.Cog):
                 # We need to document the rent details first                
                 rental_info.append(selected_item)
                 rental_info.append(selected_quantity)
-                curr_time = strftime("%Y-%m-%d %I:%M %p", localtime())
+                curr_time = strftime("%b %d, %Y at %I:%M %p", localtime())
                 rental_info.append(curr_time)
 
                 for key in self.registered_users:
@@ -366,11 +368,11 @@ class Rental(commands.Cog):
                 self.equipment_requests_queue.append(rental_info)
 
                 # inform the user that request has been placed and awaits confirmation
-                rental_request_message = (f"Sweet! Your rental request for **{selected_quantity}** **{selected_item}{sin_or_plur}** has been placed! "
-                                + "I will notify one of our e-board members to review and accept your request. "
-                                + "I promise they will get this done in no time! "
-                                + "Once your request is accepted I will notify you so that you can go pick up your "
-                                + "rental item at the UPE Makerspace. Thank you for letting me help you in this quest.")
+                rental_request_message = (f'Sweet!\n\nYour rental request for **{selected_quantity}** **{selected_item}{sin_or_plur}** has been placed! '
+                                + 'I will notify one of our e-board members to review and accept your request. '
+                                + 'I promise they will get this done in no time! '
+                                + 'Once your request is accepted I will notify you so that you can go pick up your '
+                                + f'rental item{sin_or_plur} at *La Villa*. Thank you for letting me help you in this quest.')
                 
                 await ctx.author.send(rental_request_message)
 
@@ -379,16 +381,27 @@ class Rental(commands.Cog):
 
                 # we need to pop queue right after insertion
                 head_request = self.equipment_requests_queue.popleft()
+                
+                #first_line = right_justified('Requested Item:', f'**{head_request[R_ITEM_INDEX]}**')
+                #second_line = right_justified('Requested Quantity:', f'**{head_request[R_QUANT_INDEX]}**')
+                #third_line = right_justified('Requested On:', f'**{head_request[R_DATE_INDEX]}**')
+                #fourth_line = right_justified('Requested by:', f'**{head_request[R_FN_INDEX]} {head_request[R_LN_INDEX]}**')
+                #fifth_line = right_justified('Requester PID:', f'**{head_request[R_PID_INDEX]}**')
 
-                rental_message = (f'Hey! I got a new rental request that needs your attention. Please see the details below:\n\n'
-                                 + f'Item Requested: **{head_request[R_ITEM_INDEX]}**\nQuantity Requested: **{head_request[R_QUANT_INDEX]}**\n'
-                                 + f'Requested on: **{head_request[R_DATE_INDEX]}**\nRequested by: **{head_request[R_FN_INDEX]} {head_request[R_LN_INDEX]}**\n'
-                                 + f'Requester PID: **{head_request[R_PID_INDEX]}**\n\nPlease accept this request by reacting to this message with a {accept_emoji}')
-
+                embed = discord.Embed(title='Request Details', colour=0xB6862C)
+                embed.add_field(name='Requested Item', value=f'**{head_request[R_ITEM_INDEX]}**', inline=False)
+                embed.add_field(name='Requested Quantity', value=f'**{head_request[R_QUANT_INDEX]}**', inline=False)
+                embed.add_field(name='Requested by', value=f'**{head_request[R_FN_INDEX]} {head_request[R_LN_INDEX]}**', inline=False)
+                embed.add_field(name='Requester PID', value=f'**{head_request[R_PID_INDEX]}**', inline=False)
+                embed.add_field(name='Requested On', value=f'**{head_request[R_DATE_INDEX]}**', inline=False)
 
                 logistics_channel = self.bot.get_channel(LOGISTICS_CHNL_ID)
-                
-                send_rental_msg = await logistics_channel.send(rental_message)
+
+                rental_message = (f'Hellooo! :dog:\n\nI got a new rental request that needs your attention. '
+                                 + f'You can accept this request by reacting to this message with a {accept_emoji}\n'
+                                 + 'Please see the details below:\n\n')
+
+                send_rental_message = await logistics_channel.send(rental_message, embed=embed)
 
                 def check_emoji(reaction, user):
                     is_authorizer = False
@@ -409,20 +422,37 @@ class Rental(commands.Cog):
 
                 authorizer = await self.user_converter.convert(ctx, str(authorizer_id))
 
+                authorizer_fn = None
+                authorizer_ln = None
                 # get name of rent authorizer
                 for key in self.registered_users:
                     if(key == float(authorizer.id)):
-                        first_name = self.registered_users.get(key)[FN_INDEX]
-                        last_name = self.registered_users.get(key)[LN_INDEX]
-                        rental_info.append(f'{first_name} {last_name}')
+                        authorizer_fn = self.registered_users.get(key)[FN_INDEX]
+                        authorizer_ln = self.registered_users.get(key)[LN_INDEX]
+                        rental_info.append(f'{authorizer_fn} {authorizer_ln}')
                         break
 
-                await send_rental_msg.delete()
+                today = date.today()
+
+                start_date = today.strftime("%m/%d/%Y")
+                start_date = datetime.datetime.strptime(start_date, "%m/%d/%Y")
+                end_date = start_date + datetime.timedelta(days = MAX_DAYS)
+                end_date = end_date.strftime("%b %d, %Y by 12:00 PM")
+                
+                confirmation_details = discord.Embed(title='Rental Details', colour=0x081E3F)
+                confirmation_details.add_field(name='Item', value=f'```{head_request[R_ITEM_INDEX]}```', inline=False)
+                confirmation_details.add_field(name='Quantity', value=f'```{head_request[R_QUANT_INDEX]}```', inline=False)
+                confirmation_details.add_field(name='Due On', value=f'```{end_date}```', inline=False)
 
                 rental_conf_message = (f'Hey {ctx.author.mention}!\n\nYour rental request for **{selected_quantity}** **{selected_item}{sin_or_plur}** '
-                                       + 'is confirmed!')
+                                       + f'is confirmed and your item{sin_or_plur} are ready to be picked up!\n\n'
+                                       + f'Once you arrive at *La Villa*, look for **{authorizer_fn} {authorizer_ln}** to claim your item{sin_or_plur}. '
+                                       + f'You will have until the date given below to pick up and use your item{sin_or_plur}. '
+                                       + f'When you return your item{sin_or_plur}, please take a picture of the item{sin_or_plur} in the location where you dropped them off and '
+                                       + 'send it my way! You can do this by using the "!return" command.\n\n'
+                                       + 'Please see your rental details below:\n\n')
                 
-                await ctx.author.send(rental_conf_message)
+                await ctx.author.send(rental_conf_message, embed=confirmation_details)
 
                 # once request has been confirmed log corresponding information onto requests section of spreadsheet
                 rentals_sheet = client.open('Inventory').get_worksheet(RENTAL_WORKSHEET)
@@ -583,8 +613,8 @@ class Rental(commands.Cog):
         ##############################################################################
         
         else:
-            inventory_message = (f'Hi {ctx.author.mention}, Welcome Back!\n```Which inventory would you like to check?'+
-                            '\n\n[1] General Equipment\n\nPlease type the corresponding option number or "cancel"```')
+            inventory_message = (f'Hi {ctx.author.mention}, Welcome Back!\n\nWhich inventory would you like to check?'+
+                            '\n\n```[1] General Equipment```\n\nPlease type the corresponding option number or "cancel"')
 
             await start_rental_process(inventory_message)
 
@@ -627,6 +657,19 @@ def pretty_format(entries, header_index=None, column_index=None):
         table.add_row(entry)
 
     return table
+
+# function for right text justification
+def right_justified(first, second):
+
+    def add_spacing(quantity, message):
+        return (' ' * quantity) + message
+        
+    needed_spaces = len(first)
+    max_length = 45
+    second = add_spacing(max_length - needed_spaces, second)
+    new_line = f'{first}{second}'
+    
+    return new_line
 
 # cog setup in bot file
 def setup(bot):
