@@ -12,6 +12,7 @@ import pprint
 import gspread
 import discord
 import datetime
+import os
 
 # https://developers.google.com/sheets/api/guides/concepts
 # https://docs.google.com/spreadsheets/d/1y7MaMeZb-XkrvsGVlCYdAfKKdCRJ50TdyU6Tdry6e-o/edit#gid=0
@@ -76,9 +77,11 @@ class Rental(commands.Cog):
         self.avl_item_quantity =0
         self.selected_item = None
 
-    # start user registration and rental process
+        self.equipment_sheet = client.open('Inventory').get_worksheet(0)
+
     @commands.command()
     async def rent(self, ctx):
+        """ Starts user registration and rental process """
 
         # constants
         ID_INDEX = 0
@@ -97,8 +100,9 @@ class Rental(commands.Cog):
         PID_MAX_LEN = 7
         LOGISTICS_CHNL_ID = 711296973512114226
         MAX_DAYS = 2
+        REACTION_MAX = 1
         
-        # contants for rent queue
+        # constants for rent queue
         R_ITEM_INDEX = 0
         R_QUANT_INDEX = 1
         R_DATE_INDEX = 2
@@ -115,13 +119,17 @@ class Rental(commands.Cog):
         LN_INDEX = 1
         PID_INDEX = 2
 
+        # constants for embeds
+        YELLOW = 0xB6862C 
+        BLUE = 0x081E3F
+
         # get user ID to use as key for DB
         curr_user_id = float(ctx.author.id)
     
-        # emoji for accept reaction
+        # emoji for rejection acceptances
         accept_emoji = '\N{THUMBS UP SIGN}'
 
-        # emoji for reject reaction
+        # emoji for request rejections
         reject_emoji = '\N{THUMBS DOWN SIGN}'
 
         # emoji for cancelations
@@ -133,12 +141,24 @@ class Rental(commands.Cog):
         and only thing that will change are the initial messages.
         '''
         async def start_rental_process(message):
+            """ 
+                Umbrella function that initiates the rental process.
+                
+                Arguments:
+
+                message -- the given initial message
+
+                The process flow is divided into two parts:
+                - The new user rental process
+                - The already registered user rental process 
+            """
 
             # we need to ask the user to selection which inventory to explore
             inventory_message = message
             await ctx.author.send(inventory_message)
 
             async def extract_user_inv_selection():
+                """ Gets user inventory selection """
                 # wait for user response*
                 inventory_selection = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
                 user_selection = inventory_selection.content
@@ -156,7 +176,7 @@ class Rental(commands.Cog):
             # user input validation for selected inventory
             while(self.user_selection.lower() != 'cancel'):
                 
-                # we only want the user to put the number of corresponding inventory
+                # We only want the user to put the number of corresponding inventory
                 if(self.is_number):
                     if(int(self.user_selection) >= FIRST_INV and int(self.user_selection) <= FIRST_INV):
                         break
@@ -165,19 +185,18 @@ class Rental(commands.Cog):
                 error_message = f'Invalid inventory selection. {error_emoji}' 
                 await ctx.author.send(error_message)
 
-                # we need to try again if input is not valid
+                # We need to try again if input is not valid
                 await extract_user_inv_selection()
     
-            # in case user decides to cancel request
+            # In case user decides to cancel request
             if(self.user_selection != 'cancel'):
                 await self.inventory_selection.add_reaction(accept_emoji)
 
-            # continue rental process otherwise
+            # Continue rental process otherwise
             if(self.user_selection == '1'):
-                equipment_sheet = client.open('Inventory').get_worksheet(EQUIP_WORKSHEET)
 
-                # read entire spreadsheet as a list of lists
-                inventory_items = equipment_sheet.get_all_values()
+                # Read entire spreadsheet as a list of lists
+                inventory_items = self.equipment_sheet.get_all_values()
                 
                 '''
                 since we only want to display IDs and items and their quantities, only get these two to display.
@@ -189,13 +208,13 @@ class Rental(commands.Cog):
                 for entry in inventory_items:
                         equipment.append(entry[:FIRST_THREE_ITEMS])
 
-                # we need to record the first and last entries on the spreadsheet for input validation
+                # We need to record the first and last entries on the spreadsheet for input validation
                 first_number = int(equipment[SECOND_LIST][FIRST_ENTRY])
                 last_number = int(equipment[LAST_LIST][FIRST_ENTRY])
 
                 parsed_equipment = pretty_format(equipment, HEADER_INDEX, FIRST_COL_INDEX)
 
-                # list to log user selection
+                # List to log user selection
                 user_selection_info = []
                 
                 equipment_message = (f"Here's a list of our equipment available for rent:\n\n```{parsed_equipment}``` \n"
@@ -206,6 +225,7 @@ class Rental(commands.Cog):
 
 
                 async def extract_user_req_selection():
+                    """ Gets user selection for rental item """
 
                     # We first we get the initial message from then user and extract its contents to then do validation on it
                     equipment_selection = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
@@ -213,23 +233,23 @@ class Rental(commands.Cog):
 
                     self.is_cancelled = False
 
-                    # check for user cancellation
+                    # Check for user cancellation
                     if(user_selection.lower() == 'cancel'):
                         self.user_selection = user_selection
                         return
 
-                    # get user selection (ID and quantity)
+                    # Get user selection (ID and quantity)
                     equipment_selection_trimmed =  user_selection.split(" ")
                     equipment_selection_length = len(equipment_selection_trimmed)
                                     
-                    # logical flag to check for numeric values
+                    # Logical flag to check for numeric values
                     is_number = True
 
                     for entry in equipment_selection_trimmed:
                             if(entry.isnumeric() == False):
                                 is_number = False
 
-                    # logical flag for selected rental quantity
+                    # Logical flag for selected rental quantity
                     can_take_this_many = True
                     
                     # We are initializing variables for local scope
@@ -252,18 +272,16 @@ class Rental(commands.Cog):
                             the given ID, which represents the given row.
 
                             '''
-                            selected_item_row = equipment_sheet.row_values(item_id + UP_ONE)
+                            selected_item_row = self.equipment_sheet.row_values(item_id + UP_ONE)
 
-                            # get selected item
                             selected_item = selected_item_row[ITEM_INDEX] 
 
-                            # get item's available quantity
                             avl_item_quantity = int(selected_item_row[QUANT_INDEX + UP_ONE])
 
                             if(item_quantity > MAX_REQUESTS or item_quantity > avl_item_quantity):
                                 can_take_this_many = False
                     
-                    # update corresponding instance vairables
+                    # Update corresponding instance vairables
                     self.equipment_selection = equipment_selection
                     self.user_selection = user_selection
                     self.equipment_selection_length = int(equipment_selection_length)
@@ -292,10 +310,10 @@ class Rental(commands.Cog):
                     error_emoji = '\N{Black Question Mark Ornament}'
                     
                     error_message = ""
-                    if(self.equipment_selection_length > 2):
+                    if(self.equipment_selection_length > NEEDED_LENGTH):
                         error_message = (f'Invalid inventory selection {error_emoji} Please type only the ID and the quantity of the item you wish to rent out,'
                                         + "(e.g. 1 2) for 2 ipads.")
-                    elif(self.equipment_selection_length < 2):
+                    elif(self.equipment_selection_length < NEEDED_LENGTH):
                         error_message = (f'Invalid inventory selection {error_emoji} Please type both the ID and the quantity of the item your wish to rent out,'
                                         + "(e.g. 1 2) for 2 ipads.")
                     elif(self.is_number == False):
@@ -323,7 +341,6 @@ class Rental(commands.Cog):
                         await ctx.author.send(f"You have cancelled your request. {cancel_emoji}")
                         return
 
-                # react to correct user response
                 await self.equipment_selection.add_reaction(accept_emoji)
 
                 # for entries in all_users:
@@ -335,11 +352,11 @@ class Rental(commands.Cog):
 
                 # cell_list = rentals_sheet.findall(user_pid)
 
-                # log correct user selection
+                # Log correct user selection
                 user_selection_info.extend(self.equipment_selection_trimed)
 
-                # get row values from user selection
-                selected_item_row = equipment_sheet.row_values(self.item_id + UP_ONE)
+                # Get row values from user selection
+                selected_item_row = self.equipment_sheet.row_values(self.item_id + UP_ONE)
 
                 selected_item = selected_item_row[ITEM_INDEX]
                 selected_quantity = int(user_selection_info[QUANT_INDEX])
@@ -348,7 +365,7 @@ class Rental(commands.Cog):
                 if(selected_quantity == UP_ONE):
                     sin_or_plur = ''
 
-                # get rental summary information
+                # Get rental summary information
                 rental_info = []
 
                 # We need to document the rent details first                
@@ -364,7 +381,7 @@ class Rental(commands.Cog):
                         rental_info.append(self.registered_users.get(key)[PID_INDEX])
                         break
 
-                # log request into request queue
+                # Log request into request queue
                 self.equipment_requests_queue.append(rental_info)
 
                 # inform the user that request has been placed and awaits confirmation
@@ -376,19 +393,13 @@ class Rental(commands.Cog):
                 
                 await ctx.author.send(rental_request_message)
 
-                # we need to make sure an authorizer accepts user requests
+                # We need to make sure an authorizer accepts user requests
                 authorizer = None
 
-                # we need to pop queue right after insertion
+                # We need to pop queue right after insertion
                 head_request = self.equipment_requests_queue.popleft()
                 
-                #first_line = right_justified('Requested Item:', f'**{head_request[R_ITEM_INDEX]}**')
-                #second_line = right_justified('Requested Quantity:', f'**{head_request[R_QUANT_INDEX]}**')
-                #third_line = right_justified('Requested On:', f'**{head_request[R_DATE_INDEX]}**')
-                #fourth_line = right_justified('Requested by:', f'**{head_request[R_FN_INDEX]} {head_request[R_LN_INDEX]}**')
-                #fifth_line = right_justified('Requester PID:', f'**{head_request[R_PID_INDEX]}**')
-
-                embed = discord.Embed(title='Request Details', colour=0xB6862C)
+                embed = discord.Embed(title='Request Details', colour=YELLOW)
                 embed.add_field(name='Requested Item', value=f'**{head_request[R_ITEM_INDEX]}**', inline=False)
                 embed.add_field(name='Requested Quantity', value=f'**{head_request[R_QUANT_INDEX]}**', inline=False)
                 embed.add_field(name='Requested by', value=f'**{head_request[R_FN_INDEX]} {head_request[R_LN_INDEX]}**', inline=False)
@@ -404,6 +415,7 @@ class Rental(commands.Cog):
                 send_rental_message = await logistics_channel.send(rental_message, embed=embed)
 
                 def check_emoji(reaction, user):
+                    """ Checks that user that reacted has authorized role """
                     is_authorizer = False
                     for role in user.roles:
                         if role.name == 'Logistics':
@@ -413,8 +425,8 @@ class Rental(commands.Cog):
                     
                 authorizer_reaction, authorizer = await self.bot.wait_for('reaction_add', check=check_emoji)
 
-                # users that have reacted request message
-                users = await authorizer_reaction.users(1).flatten()
+                # Users that have reacted request message
+                users = await authorizer_reaction.users(limit=REACTION_MAX).flatten()
 
                 authorizer_id = None
                 for user in users:
@@ -424,7 +436,8 @@ class Rental(commands.Cog):
 
                 authorizer_fn = None
                 authorizer_ln = None
-                # get name of rent authorizer
+
+                # Get name of rent authorizer
                 for key in self.registered_users:
                     if(key == float(authorizer.id)):
                         authorizer_fn = self.registered_users.get(key)[FN_INDEX]
@@ -434,16 +447,22 @@ class Rental(commands.Cog):
 
                 today = date.today()
 
+                # Calculate ending date for rental
                 start_date = today.strftime("%m/%d/%Y")
                 start_date = datetime.datetime.strptime(start_date, "%m/%d/%Y")
                 end_date = start_date + datetime.timedelta(days = MAX_DAYS)
                 end_date = end_date.strftime("%b %d, %Y by 12:00 PM")
                 
-                confirmation_details = discord.Embed(title='Rental Details', colour=0x081E3F)
+                pic_file = discord.File("assets\makernautprofilepic.png", filename="makernautprofilepic.png")
+
+                # embed for rent confirmation
+                confirmation_details = discord.Embed(title='Your Rental Details', colour=BLUE)
+                confirmation_details.set_thumbnail(url="attachment://makernautprofilepic.png")
+                confirmation_details.set_footer(text='If you have any questions, please consult one of our e-board members.')
                 confirmation_details.add_field(name='Item', value=f'```{head_request[R_ITEM_INDEX]}```', inline=False)
                 confirmation_details.add_field(name='Quantity', value=f'```{head_request[R_QUANT_INDEX]}```', inline=False)
                 confirmation_details.add_field(name='Due On', value=f'```{end_date}```', inline=False)
-
+                
                 rental_conf_message = (f'Hey {ctx.author.mention}!\n\nYour rental request for **{selected_quantity}** **{selected_item}{sin_or_plur}** '
                                        + f'is confirmed and your item{sin_or_plur} are ready to be picked up!\n\n'
                                        + f'Once you arrive at *La Villa*, look for **{authorizer_fn} {authorizer_ln}** to claim your item{sin_or_plur}. '
@@ -452,26 +471,26 @@ class Rental(commands.Cog):
                                        + 'send it my way! You can do this by using the "!return" command.\n\n'
                                        + 'Please see your rental details below:\n\n')
                 
-                await ctx.author.send(rental_conf_message, embed=confirmation_details)
+                await ctx.author.send(rental_conf_message, file=pic_file, embed=confirmation_details)
 
-                # once request has been confirmed log corresponding information onto requests section of spreadsheet
+                # Once request has been confirmed log corresponding information onto requests section of spreadsheet
                 rentals_sheet = client.open('Inventory').get_worksheet(RENTAL_WORKSHEET)
 
                 # Make sure that request was accepted by e-board member
                 if(authorizer_reaction.emoji == accept_emoji):
 
-                    # insert new row with new rental
-                    # always at the top of spreadsheet so it works as a stack
+                    # Insert new row with new rental
+                    # Always at the top of spreadsheet so it works as a stack
                     rentals_sheet.insert_row(rental_info, RENT_INDEX)
 
-                    # log active request
+                    # Log active request
                     self.active_requests_queue.append(head_request)
 
-                    # only want to update corresponding cell
-                    cell_to_update = equipment_sheet.find(selected_item)
+                    # Only want to update corresponding cell
+                    cell_to_update = self.equipment_sheet.find(selected_item)
                 
                     # We need to udpate the corresponding values for the borrowed item on the spreadsheet
-                    equipment_sheet.update_cell(cell_to_update.row, int(cell_to_update.col) + UP_ONE, int(self.avl_item_quantity) - selected_quantity)
+                    self.equipment_sheet.update_cell(cell_to_update.row, int(cell_to_update.col) + UP_ONE, int(self.avl_item_quantity) - selected_quantity)
 
             else:
                 await ctx.author.send(f"You have cancelled your request. {cancel_emoji}")
@@ -483,32 +502,35 @@ class Rental(commands.Cog):
         #                                                                            #
         ##############################################################################
 
-        # inform user about incoming DM
-        # check if rent command was invoked from bot channel
+        # Inform user about incoming DM
         current_channel = str(ctx.message.channel)
         if(current_channel == 'bot-spam'):
 
-            # inform user of incoming DM
             await ctx.send(f'Hey {ctx.author.mention}, check your DMs :eyes:')
 
-        # if user is new
+        # If user is new
         if(curr_user_id not in self.registered_users):
 
-            # list to log user information
+            # List to log user information
             user_info = []
 
-            # initial message to ask for user information
+            # Initial message to ask for user information
             initial_message = (f'Hey {ctx.author.mention}!\n\nIt seems like this is your first time requesting to rent out equipment from the UPE Makerspace. In order to rent out equipment, ' 
                     + 'I need you to provide me with your *First Name*, *Last Name*, and *PID*. ' 
                     + 'First, please type your **First Name** and **Last Name** separated by spaces, (e.g. John Doe).')
 
             async def extract_user_info(message):
-                
-                # send the initial message to the user
+                """ 
+                First step in the registration process. We get the user's
+                First Name, Last Name, and PID. 
+                """
+
                 await ctx.author.send(message)
 
                 async def extract_user_response():
-                    # wait for user response
+                    """ Gets user's Fist Name and Last Name first """
+
+                    # Wait for user response
                     initial_response = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
                     initial_response_trimmed = initial_response.content.split(" ")
                     initial_response_length = len(initial_response_trimmed)
@@ -519,7 +541,7 @@ class Rental(commands.Cog):
 
                 await extract_user_response()
 
-                # perform user response validation
+                # Perform user response validation for input
                 while(self.initial_response_length < NEEDED_LENGTH):
                     error_message = ('Uh-oh! I seems that either your First Name or Last Name is missing. '
                                     + 'Please make sure you include your **First Name** and **Last Name** ' 
@@ -528,19 +550,19 @@ class Rental(commands.Cog):
                     await ctx.author.send(error_message)
                     await extract_user_response()
 
-                # react to correct user response
                 await self.initial_response.add_reaction(accept_emoji)
 
-                # log correct user's First Name and Last Name
+                # Log correct user's First Name and Last Name
                 self.initial_response_trimmed = self.initial_response_trimmed[:NEEDED_LENGTH]
                 user_info.extend(self.initial_response_trimmed)
 
-                # send PID message to the user
+                # Send PID message to the user
                 pid_message = "Thanks!\n\nNow, please type your **7-digit PID**, (e.g, 1231231)."
                 await ctx.author.send(pid_message)
 
                 async def extract_user_pid():
-                    # wait for user response
+                    """ Gets user's PID """
+                    # Wait for user response
                     pid_response = await self.bot.wait_for('message', check=message_check(channel=ctx.author.dm_channel))
                     pid_length = len(pid_response.content)
                     is_number = pid_response.content.isnumeric()
@@ -551,7 +573,7 @@ class Rental(commands.Cog):
                 
                 await extract_user_pid()
 
-                # perform PID validation
+                # Perform PID validation for input
                 while((self.pid_length < PID_MAX_LEN or self.pid_length > PID_MAX_LEN) or self.is_number == False):
                     error_message = ('Uh-oh! it seems that your PID is not valid. ' 
                                     +'Please make sure you type your **7-digit PID**, (e.g. 1231231).')
@@ -561,7 +583,7 @@ class Rental(commands.Cog):
 
                 await self.pid_response.add_reaction(accept_emoji)
                 
-                # log correct user's PID
+                # Log correct user's PID
                 user_info.append(self.pid_response.content)
 
                 ##############################################################################
@@ -571,6 +593,7 @@ class Rental(commands.Cog):
                 #                                                                            #
                 ##############################################################################
 
+                # We need to check user's information is correct
                 confirmation_message = ('Awesome!\n\nNow, just to check I got everything right, can you please confirm the information below is correct?\n\n'
                                         +f'```Your First Name: {user_info[FN_INDEX]}\nYour Last Name: {user_info[LN_INDEX]}\nYour PID: {user_info[PID_INDEX]}```\n'
                                         +f'Confirm by reacting to this message with a {accept_emoji} or a {reject_emoji} to change your information.')
@@ -578,10 +601,15 @@ class Rental(commands.Cog):
                 send_conf_message = await ctx.author.send(confirmation_message)
 
                 def check_emoji(reaction, user):
+                    """ 
+                    checks that user reacted to message and that reaction
+                    was either thumbs up or thumbs down
+                    """
                     return user == ctx.author and (str(reaction.emoji) == accept_emoji or str(reaction.emoji) == reject_emoji)
                     
                 confirmation_response, ctx.author = await self.bot.wait_for('reaction_add', check=check_emoji)
 
+                # Check if user wants to repeat registration process
                 if(confirmation_response.emoji == accept_emoji):
                     return True
                 elif(confirmation_response.emoji == reject_emoji):
@@ -596,7 +624,7 @@ class Rental(commands.Cog):
                 user_confirmation = await extract_user_info(message)
 
 
-             # insert new row with new user information and log info into dictionary
+             # Insert new row with new user information and log info into dictionary
             self.registered_users[curr_user_id] = user_info
             row = [curr_user_id, user_info[FN_INDEX], user_info[LN_INDEX], user_info[PID_INDEX]]
             self.users_sheet.insert_row(row, ROW_INDEX)
@@ -618,8 +646,11 @@ class Rental(commands.Cog):
 
             await start_rental_process(inventory_message)
 
-# auxiliary function for the message_check function to make a string sequence of the given parameter
 def make_sequence(seq):
+    """ 
+    auxiliary function for the message_check function to
+    make a string sequence of the given parameter
+    """
     if seq is None:
         return ()
     if isinstance(seq, Sequence) and not isinstance(seq, str):
@@ -627,15 +658,19 @@ def make_sequence(seq):
     else:
         return (seq,)
 
-# function to make logical checks when receiving DMs
 def message_check(channel=None, author=None, content=None, ignore_bot=True, lower=True):
+    """ Makes logical checks when receiving DMs """
     channel = make_sequence(channel)
     author = make_sequence(author)
     content = make_sequence(content)
     if lower:
         content = tuple(c.lower() for c in content)
-    # check that the sender of DM is the same as the receiver of the original DM from bot
+    
     def check(message):
+        """ 
+        check that the sender of DM is the same as the 
+        receiver of the original DM from bot
+        """
         if ignore_bot and message.author.bot:
             return False
         if channel and message.channel not in channel:
@@ -648,8 +683,8 @@ def message_check(channel=None, author=None, content=None, ignore_bot=True, lowe
         return True
     return check
 
-# function to format spreadsheets to readable a format
 def pretty_format(entries, header_index=None, column_index=None):
+    """ format spreadsheets to a readable, tabular format """ 
     table = PrettyTable() 
     table.field_names = entries[header_index]
 
@@ -658,8 +693,8 @@ def pretty_format(entries, header_index=None, column_index=None):
 
     return table
 
-# function for right text justification
 def right_justified(first, second):
+    """ Right justifies the second input string """
 
     def add_spacing(quantity, message):
         return (' ' * quantity) + message
@@ -671,6 +706,6 @@ def right_justified(first, second):
     
     return new_line
 
-# cog setup in bot file
 def setup(bot):
+    """ registers this cog to the bot's commands """
     bot.add_cog(Rental(bot))
