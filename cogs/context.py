@@ -9,6 +9,7 @@ class BotContext(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.MOD_ROLE_ID = 743537238071181472
+        self.BOT_FRIENDLY_CHANNELS = [746081458564890654, 745044635604484217]
 
 
     #Events
@@ -22,7 +23,7 @@ class BotContext(commands.Cog):
         content = message.content
         channel = message.channel
 
-        if str(channel) == 'bot-commands':
+        if channel.id in self.BOT_FRIENDLY_CHANNELS:
         
             if author.id == self.bot.user.id:
                 return
