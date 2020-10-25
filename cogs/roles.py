@@ -22,10 +22,10 @@ class Roles(commands.Cog):
         #Emojis
         self.emojis = {
             "RULES_ACCEPTANCE_EMOJI_NAME" :'\N{WHITE HEAVY CHECK MARK}',
-            "WEB_INTEREST_EMOJI_ID" : 753272557800784024,
-            "AI_INTEREST_EMOJI_ID" :753272557737607369,
-            "HARDWARE_INTEREST_EMOJI_ID" : 753272557867761763,
-            "GAMING_INTEREST_EMOJI_ID" : 682027649568342081
+            "WEB_INTEREST_EMOJI" : "<:web_dev:753272557800784024>",
+            "AI_INTEREST_EMOJI" :"<:artificial_intelligence:753272557737607369>",
+            "HARDWARE_INTEREST_EMOJI" : "<:robotics:753272557867761763>",
+            "GAMING_INTEREST_EMOJI" : "<:partaaaay:682027649568342081>"
             }
 
     #Events
@@ -35,13 +35,28 @@ class Roles(commands.Cog):
         reacting_user = payload.member
         print("User " + reacting_user.name + " reacted with: " + payload.emoji.name)
 
-        verified_user_role = discord.utils.get(reacting_user.guild.roles, name="User")
+        if payload.message_id == self.RULES_ACCEPTANCE_MESSAGE_ID:
 
-        # User reacts on the appropiate message AND with the appropiate emoji
-        if payload.message_id == self.RULES_ACCEPTANCE_MESSAGE_ID and payload.emoji.name == self.emojis["RULES_ACCEPTANCE_EMOJI_NAME"]:
-            await reacting_user.add_roles(verified_user_role) # Sets the 'User' role
-            print("User " + reacting_user.name + " has read and accepted the rules!")
-            await self.log_channel.send(f'{reacting_user.mention} has read and accepted the rules!')
+            # User reacts on the appropiate message AND with the appropiate emoji
+            if payload.emoji.name == self.emojis["RULES_ACCEPTANCE_EMOJI_NAME"]:
+                # Sets the verified 'User' role
+                verified_user_role = discord.utils.get(reacting_user.guild.roles, name="User")
+                await reacting_user.add_roles(verified_user_role) 
+
+                #Prints to console and notifies bot-log channel
+                print("User " + reacting_user.name + " has read and accepted the rules!")
+                await self.log_channel.send(f'{reacting_user.mention} has read and accepted the rules!')
+
+        if payload.message_id == self.ROLE_ASSIGNMENT_MESSAGE_ID:
+
+            if str(payload.emoji) == self.emojis["WEB_INTEREST_EMOJI"]:
+                # Sets the verified 'Interested' role (placeholder)
+                Placeholder_user_role = discord.utils.get(reacting_user.guild.roles, name="Interested")
+                await reacting_user.add_roles(Placeholder_user_role) 
+
+                #Prints to console and notifies bot-log channel
+                print("User " + reacting_user.name + " is interested in something!")
+                await self.log_channel.send(f'{reacting_user.mention} is interested in something! <a:pumpIt:439920250302103562>')
 
 def setup(bot):
     bot.add_cog(Roles(bot)) 
