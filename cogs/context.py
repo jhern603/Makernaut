@@ -9,7 +9,7 @@ class BotContext(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.MOD_ROLE_ID = 743537238071181472
-        self.BOT_FRIENDLY_CHANNELS = [746081458564890654, 745044635604484217]
+        self.BOT_FRIENDLY_CHANNELS = [746081458564890654, 745044635604484217, 745044607871615049]
 
 
     #Events

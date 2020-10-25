@@ -23,7 +23,8 @@ async def on_ready():
     
     #Set status
     await bot.change_presence(status = discord.Status.online, activity=discord.Game("Ready to Help!"))
-            
+    print(f'All set! 🚀\n')
+        
 @bot.event
 async def on_disconnect():
     print('Bot Disconnected...')
@@ -47,10 +48,10 @@ async def reload(ctx):
                 bot.load_extension(f'cogs.{filename[:-3]}')
                 print(f'- {(filename[:-3]).title()} commands reloaded')
         await ctx.send(f'Cogs reloaded succesfully')
+        print(f'Cogs reloaded succesfully\n')
     except Exception:
         await ctx.send(f"Something's not right...")
         print(Exception)
-
 
 if __name__ == "__main__":
     bot.run(secret_key)

@@ -8,29 +8,40 @@ class Roles(commands.Cog):
     '''
     def __init__(self, bot):
         self.bot = bot
+
+        #Channels
+        self.BOT_LOGS_CHANNEL_ID = 746081458564890654
+        self.log_channel = self.bot.get_channel(self.BOT_LOGS_CHANNEL_ID)
+
+        #Messages
         self.RULES_ACCEPTANCE_MESSAGE_ID = 746080888571297853
-        self.GREETINGS_CHANNEL_ID = 746081458564890654
-        self.ACCEPTANCE_EMOJI_NAME = '\N{WHITE HEAVY CHECK MARK}'
-        
+        self.ROLE_ASSIGNMENT_MESSAGE_ID = 769952501386313728
+
+        #Roles
+
+        #Emojis
+        self.emojis = {
+            "RULES_ACCEPTANCE_EMOJI_NAME" :'\N{WHITE HEAVY CHECK MARK}',
+            "WEB_INTEREST_EMOJI_ID" : 753272557800784024,
+            "AI_INTEREST_EMOJI_ID" :753272557737607369,
+            "HARDWARE_INTEREST_EMOJI_ID" : 753272557867761763,
+            "GAMING_INTEREST_EMOJI_ID" : 682027649568342081
+            }
+
     #Events
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
 
-        aspiring_verified_user = payload.member
-        print("Reaction added: " + payload.emoji.name + " by user: " + aspiring_verified_user.name)
+        reacting_user = payload.member
+        print("User " + reacting_user.name + " reacted with: " + payload.emoji.name)
 
-        verified_user_role = discord.utils.get(aspiring_verified_user.guild.roles, name="User")
-        greetings_channel = self.bot.get_channel(self.GREETINGS_CHANNEL_ID)
+        verified_user_role = discord.utils.get(reacting_user.guild.roles, name="User")
 
-        if payload.message_id == self.RULES_ACCEPTANCE_MESSAGE_ID and payload.emoji.name == self.ACCEPTANCE_EMOJI_NAME:
-            await aspiring_verified_user.add_roles(verified_user_role)
-            # TODO: Confirm that user actually got assigned 'verified' role before sending confirmation on greetings-channel
-            # await greetings_channel.send(f'{aspiring_verified_user.mention} read the rules!')
-            # print(verified_user_role)
-            # print(aspiring_verified_user.roles)
-            # if verified_user_role in aspiring_verified_user.roles:
-            print("User " + aspiring_verified_user.name + " is now verified!")
-            await greetings_channel.send(f'{aspiring_verified_user.mention} is now verified!')
+        # User reacts on the appropiate message AND with the appropiate emoji
+        if payload.message_id == self.RULES_ACCEPTANCE_MESSAGE_ID and payload.emoji.name == self.emojis["RULES_ACCEPTANCE_EMOJI_NAME"]:
+            await reacting_user.add_roles(verified_user_role) # Sets the 'User' role
+            print("User " + reacting_user.name + " has read and accepted the rules!")
+            await self.log_channel.send(f'{reacting_user.mention} has read and accepted the rules!')
 
 def setup(bot):
     bot.add_cog(Roles(bot)) 
